@@ -411,6 +411,7 @@ export type {
   TransferRequest,
   TransferProgress,
   TransferMode,
+  TransferTableNameCase,
   TableImportMode,
   TableImportStatus,
   TableImportColumnMapping,

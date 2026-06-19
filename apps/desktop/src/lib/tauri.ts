@@ -1448,6 +1448,7 @@ export async function listenSqlFileProgress(handler: (progress: SqlFileProgress)
 
 // --- Data Transfer ---
 export type TransferMode = "append" | "overwrite" | "upsert";
+export type TransferTableNameCase = "preserve" | "lower" | "upper";
 
 export interface TransferRequest {
   transferId: string;
@@ -1460,6 +1461,7 @@ export interface TransferRequest {
   tables: string[];
   createTable: boolean;
   mode: TransferMode;
+  targetTableNameCase: TransferTableNameCase;
   batchSize: number;
 }
 
