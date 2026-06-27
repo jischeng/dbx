@@ -67,7 +67,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { useQueryStore } from "@/stores/queryStore";
 import QueryEditor from "@/components/editor/QueryEditor.vue";
 import DdlViewDialog from "./DdlViewDialog.vue";
-import type { SqlFormatDialect } from "@/lib/sqlFormatter";
+import { formatSqlForDisplay, sqlFormatDialectForDbType, type SqlFormatDialect } from "@/lib/sqlFormatter";
 import { isCancelSearchShortcut } from "@/lib/keyboardShortcuts";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -122,6 +122,7 @@ const sourceRow = ref<ObjectBrowserRow | null>(null);
 const sourceEditing = ref(false);
 const effectiveDatabaseType = computed(() => effectiveDatabaseTypeForConnection(props.connection) ?? props.connection.db_type);
 const tableStructureDatabaseType = computed(() => tableStructureDatabaseTypeForConnection(props.connection) ?? props.connection.db_type);
+const sourceEditableText = ref("");
 const sourceDraft = ref("");
 const sourceSaving = ref(false);
 const sourceSaveError = ref("");
@@ -178,25 +179,7 @@ const canOpenDiagram = computed(() => !!props.database && supportsSchemaDiagram(
 const canOpenTableImport = computed(() => !!props.database && supportsTableImport(effectiveDatabaseType.value));
 const supportsTruncateTable = computed(() => supportsTableTruncate(effectiveDatabaseType.value));
 const sourceDialect = computed(() => codeMirrorSqlDialect(effectiveDatabaseType.value));
-const sourceFormatDialect = computed<SqlFormatDialect>(() => {
-  switch (effectiveDatabaseType.value) {
-    case "mysql":
-    case "postgres":
-    case "sqlite":
-    case "sqlserver":
-      return effectiveDatabaseType.value;
-    case "rqlite":
-    case "turso":
-      return "sqlite";
-    case "gaussdb":
-    case "kwdb":
-    case "opengauss":
-    case "questdb":
-      return "postgres";
-    default:
-      return "generic";
-  }
-});
+const sourceFormatDialect = computed<SqlFormatDialect>(() => sqlFormatDialectForDbType(effectiveDatabaseType.value));
 const objectFilters = computed<ObjectFilter[]>(() =>
   (
     [
@@ -425,6 +408,7 @@ async function openSource(row: ObjectBrowserRow) {
   sourceContent.value = "";
   sourceError.value = "";
   sourceEditing.value = false;
+  sourceEditableText.value = "";
   sourceDraft.value = "";
   sourceSaveError.value = "";
   sourceLoading.value = true;
@@ -437,7 +421,8 @@ async function openSource(row: ObjectBrowserRow) {
       name: row.name,
       source: result.source,
     });
-    sourceContent.value = editable;
+    sourceEditableText.value = editable;
+    sourceContent.value = await formatSqlForDisplay(editable, sourceFormatDialect.value, settingsStore.editorSettings.sqlFormatter);
     sourceDraft.value = editable;
     sourceEditing.value = row.type !== "SEQUENCE";
   } catch (e: any) {
@@ -457,8 +442,9 @@ async function openViewDdl(row: ObjectBrowserRow) {
       name: row.name,
       source: result.source,
     });
+    const formatted = await formatSqlForDisplay(ddl, sourceFormatDialect.value, settingsStore.editorSettings.sqlFormatter);
     const tabId = queryStore.createTab(props.connection.id, props.database, `DDL - ${row.name}`);
-    queryStore.updateSql(tabId, ddl);
+    queryStore.updateSql(tabId, formatted);
   } catch (e: any) {
     toast(e?.message || String(e), 5000);
   }
@@ -630,6 +616,7 @@ function closeSource() {
   sourceContent.value = "";
   sourceError.value = "";
   sourceEditing.value = false;
+  sourceEditableText.value = "";
   sourceDraft.value = "";
   sourceSaveError.value = "";
 }
@@ -1040,8 +1027,8 @@ async function copySource() {
 }
 
 function editSource() {
-  if (!sourceRow.value || !sourceContent.value) return;
-  sourceDraft.value = sourceContent.value;
+  if (!sourceRow.value || !sourceEditableText.value) return;
+  sourceDraft.value = sourceEditableText.value;
   sourceSaveError.value = "";
   sourceEditing.value = true;
 }
@@ -1684,7 +1671,7 @@ function getObjectBrowserMenuItems(item: ObjectBrowserRow): ContextMenuItem[] {
     </DialogContent>
   </Dialog>
 
-  <DdlViewDialog v-if="ddlDialogTarget" :connection-id="props.connection.id" :database="props.database" :schema="ddlDialogTarget.schema || selectedSchema" :table-name="ddlDialogTarget.name" :dialect="sourceDialect" v-model:open="showDdlDialog" />
+  <DdlViewDialog v-if="ddlDialogTarget" :connection-id="props.connection.id" :database="props.database" :schema="ddlDialogTarget.schema || selectedSchema" :table-name="ddlDialogTarget.name" :dialect="sourceDialect" :format-dialect="sourceFormatDialect" v-model:open="showDdlDialog" />
 </template>
 
 <style scoped>
