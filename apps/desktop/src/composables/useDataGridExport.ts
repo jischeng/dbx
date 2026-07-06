@@ -60,6 +60,15 @@ export interface UseDataGridExportOptions {
    * slow query is never re-run just to export rows that are already on screen.
    */
   hasCompleteLocalResult?: ComputedRef<boolean>;
+  /**
+   * The raw in-memory QueryResult to use for "export all" when
+   * hasCompleteLocalResult is true. Exports the original query result (all
+   * rows, all columns, committed values) so the output matches the original
+   * re-run-SQL semantics — displayItems only covers visible columns and
+   * reflects client-side filters/search and unsaved edits, which would
+   * silently change what "export all data" produces.
+   */
+  completeLocalResult?: ComputedRef<QueryResult | undefined>;
   allExportResults?: ComputedRef<Array<{ sheetName: string; result: QueryResult }> | undefined>;
   currentResultLabel?: ComputedRef<string | undefined>;
   exportFileBaseName?: ComputedRef<string | undefined>;
@@ -131,6 +140,7 @@ export function useDataGridExport(options: UseDataGridExportOptions) {
     fullExportResult,
     queryResultExportRequest,
     hasCompleteLocalResult,
+    completeLocalResult,
     allExportResults,
     currentResultLabel,
     exportFileBaseName,
@@ -158,6 +168,14 @@ export function useDataGridExport(options: UseDataGridExportOptions) {
     if (useFullExport && rowIds === undefined && fullExportResult && !hasCompleteLocalResult?.value) {
       const result = await fullExportResult(onProgress);
       if (result) return { columns: result.columns, rows: result.rows };
+    }
+    // The full result is already in memory — export the raw QueryResult (all
+    // rows, all columns, committed values) so "export all data" matches the
+    // original re-run-SQL semantics. displayItems only covers visible columns
+    // and reflects client-side filters/search and unsaved edits, which would
+    // silently change what the export contains.
+    if (useFullExport && rowIds === undefined && hasCompleteLocalResult?.value && completeLocalResult?.value) {
+      return { columns: completeLocalResult.value.columns, rows: completeLocalResult.value.rows };
     }
     return {
       columns: columns.value,
