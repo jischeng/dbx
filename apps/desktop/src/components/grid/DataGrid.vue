@@ -5827,6 +5827,7 @@ const {
   hasRowSelection,
   fullExportResult: props.fullExportResult,
   queryResultExportRequest: props.queryResultExportRequest,
+  hasCompleteLocalResult: computed(() => !!props.result && allRowsLoaded.value && props.result.truncated !== true && props.result.has_more !== true),
   allExportResults: computed(() => props.allExportResults),
   currentResultLabel: computed(() => props.result.sourceLabel),
   exportFileBaseName: computed(() => props.exportFileBaseName),
