@@ -119,6 +119,7 @@ import {
   buildEmptyTableSql,
   buildTruncateTableSql,
   supportsDropTableCascade,
+  supportsTruncateTableCascade,
   supportsSchemaComment,
   type DropTableChildObjectSqlOptions,
   type DropObjectSqlOptions,
@@ -1704,6 +1705,7 @@ async function duplicateConnection() {
 const showDropTableConfirm = ref(false);
 const showDropTableChildObjectConfirm = ref(false);
 const showBatchDropConfirm = ref(false);
+const showBatchTruncateConfirm = ref(false);
 const showStructurePreviewDialog = ref(false);
 const showStructureDocCopyDialog = ref(false);
 const structurePreviewSql = ref("");
@@ -1721,11 +1723,15 @@ const renameObjectError = ref("");
 const renameObjectPreviewSql = ref("");
 const dropTablePreviewSql = ref("");
 const dropTableCascade = ref(false);
+const batchDropCascade = ref(false);
 const emptyTablePreviewSql = ref("");
 const truncateTablePreviewSql = ref("");
+const truncateTableCascade = ref(false);
 const dropObjectPreviewSql = ref("");
 const dropTableChildObjectPreviewSql = ref("");
 const batchDropPreviewSql = ref("");
+const batchTruncatePreviewSql = ref("");
+const batchTruncateCascade = ref(false);
 const dropDatabasePreviewSql = ref("");
 const dropSchemaPreviewSql = ref("");
 const showDuplicateDialog = ref(false);
@@ -2019,6 +2025,16 @@ function selectedBatchDropTargets(): TreeNode[] {
   return selected;
 }
 
+function selectedBatchTableTargets(): TreeNode[] {
+  const targets = selectedBatchDropTargets();
+  return targets.length > 1 && targets.every((node) => node.type === "table") ? targets : [];
+}
+
+function selectedBatchTruncateTargets(): TreeNode[] {
+  const targets = selectedBatchTableTargets();
+  return targets.every((node) => supportsTableTruncate(databaseTypeForNode(node))) ? targets : [];
+}
+
 function selectedBatchMongoIndexTargets(): TreeNode[] {
   const targets = selectedBatchDropTargets();
   return targets.length > 1 && targets.every((node) => canDropMongoIndexNode(node)) ? targets : [];
@@ -2056,12 +2072,25 @@ function batchDropConfirmMessage(): string {
   return t("contextMenu.confirmBatchDropMessage", { count: targets.length });
 }
 
-async function dropSqlForTreeNode(node: TreeNode): Promise<string | null> {
+function batchTruncateMenuLabel(): string {
+  return t("contextMenu.batchTruncate", { count: selectedBatchTruncateTargets().length });
+}
+
+function batchTruncateConfirmTitle(): string {
+  return t("contextMenu.confirmBatchTruncateTitle", { count: selectedBatchTruncateTargets().length });
+}
+
+function batchTruncateConfirmMessage(): string {
+  return t("contextMenu.confirmBatchTruncateMessage", { count: selectedBatchTruncateTargets().length });
+}
+
+async function dropSqlForTreeNode(node: TreeNode, options?: { cascade?: boolean }): Promise<string | null> {
   if (node.type === "table" && node.connectionId && node.database) {
     return buildDropTableSql({
       databaseType: databaseTypeForNode(node),
       schema: node.schema,
       tableName: node.label,
+      cascade: options?.cascade && supportsDropTableCascade(databaseTypeForNode(node)),
     });
   }
   const objectOptions = dropObjectSqlOptionsForNode(node);
@@ -2074,6 +2103,16 @@ async function dropSqlForTreeNode(node: TreeNode): Promise<string | null> {
   return null;
 }
 
+async function truncateSqlForTreeNode(node: TreeNode, options?: { cascade?: boolean }): Promise<string | null> {
+  if (node.type !== "table" || !node.connectionId || !node.database || !supportsTableTruncate(databaseTypeForNode(node))) return null;
+  return buildTruncateTableSql({
+    databaseType: databaseTypeForNode(node),
+    schema: node.schema,
+    tableName: node.label,
+    cascade: options?.cascade && supportsTruncateTableCascade(databaseTypeForNode(node)),
+  });
+}
+
 async function refreshBatchDropPreviewSql() {
   const targets = selectedBatchDropTargets();
   const mongoIndexTargets = selectedBatchMongoIndexTargets();
@@ -2082,17 +2121,37 @@ async function refreshBatchDropPreviewSql() {
     return;
   }
   const statements: string[] = [];
+  const useCascade = canBatchDropCascade.value && batchDropCascade.value;
   for (const target of targets) {
-    const sql = await dropSqlForTreeNode(target);
+    const sql = await dropSqlForTreeNode(target, { cascade: useCascade });
     if (sql) statements.push(sql);
   }
   batchDropPreviewSql.value = statements.join("\n");
 }
 
+async function refreshBatchTruncatePreviewSql() {
+  const targets = selectedBatchTruncateTargets();
+  const statements: string[] = [];
+  const useCascade = canBatchTruncateCascade.value && batchTruncateCascade.value;
+  for (const target of targets) {
+    const sql = await truncateSqlForTreeNode(target, { cascade: useCascade });
+    if (sql) statements.push(sql);
+  }
+  batchTruncatePreviewSql.value = statements.join("\n");
+}
+
 function requestBatchDrop() {
   if (!selectedBatchDropTargets().length) return;
+  batchDropCascade.value = false;
   void refreshBatchDropPreviewSql();
   showBatchDropConfirm.value = true;
+}
+
+function requestBatchTruncate() {
+  if (!selectedBatchTruncateTargets().length) return;
+  batchTruncateCascade.value = false;
+  void refreshBatchTruncatePreviewSql();
+  showBatchTruncateConfirm.value = true;
 }
 
 function requestDropSelectedNodes(): boolean {
@@ -2287,10 +2346,11 @@ async function confirmBatchDrop() {
       showBatchDropConfirm.value = false;
       return;
     }
+    const useCascade = canBatchDropCascade.value && batchDropCascade.value;
     for (const target of targets) {
       if (!target.connectionId || !target.database) continue;
       await connectionStore.ensureConnected(target.connectionId);
-      const sql = await dropSqlForTreeNode(target);
+      const sql = await dropSqlForTreeNode(target, { cascade: useCascade });
       if (!sql) continue;
       await api.executeQuery(target.connectionId, target.database, sql, target.schema);
       closeDroppedTableObjectTabsForNode(target);
@@ -2298,6 +2358,25 @@ async function confirmBatchDrop() {
     }
     toast(t("contextMenu.batchDropSuccess", { count: targets.length }), 3000);
     showBatchDropConfirm.value = false;
+  } catch (e: any) {
+    toast(t("contextMenu.tableOperationFailed", { message: e?.message || String(e) }), 5000);
+  }
+}
+
+async function confirmBatchTruncate() {
+  const targets = selectedBatchTruncateTargets();
+  if (!targets.length) return;
+  try {
+    const useCascade = canBatchTruncateCascade.value && batchTruncateCascade.value;
+    for (const target of targets) {
+      if (!target.connectionId || !target.database) continue;
+      await connectionStore.ensureConnected(target.connectionId);
+      const sql = await truncateSqlForTreeNode(target, { cascade: useCascade });
+      if (!sql) continue;
+      await api.executeQuery(target.connectionId, target.database, sql, target.schema);
+    }
+    toast(t("contextMenu.batchTruncateSuccess", { count: targets.length }), 3000);
+    showBatchTruncateConfirm.value = false;
   } catch (e: any) {
     toast(t("contextMenu.tableOperationFailed", { message: e?.message || String(e) }), 5000);
   }
@@ -2410,6 +2489,15 @@ const canEditSchemaComment = computed(() => {
 });
 
 const canDropTableCascade = computed(() => props.node.type === "table" && supportsDropTableCascade(currentDatabaseType()));
+const canTruncateTableCascade = computed(() => props.node.type === "table" && supportsTruncateTableCascade(currentDatabaseType()));
+const canBatchDropCascade = computed(() => {
+  const targets = selectedBatchTableTargets();
+  return targets.length > 1 && targets.every((node) => supportsDropTableCascade(databaseTypeForNode(node)));
+});
+const canBatchTruncateCascade = computed(() => {
+  const targets = selectedBatchTruncateTargets();
+  return targets.length > 1 && targets.every((node) => supportsTruncateTableCascade(databaseTypeForNode(node)));
+});
 
 function tableAdminSqlOptions(options?: { cascade?: boolean }): TableAdminSqlOptions {
   const result: TableAdminSqlOptions = {
@@ -2425,6 +2513,10 @@ function dropTableSqlOptions(): TableAdminSqlOptions {
   return tableAdminSqlOptions({ cascade: canDropTableCascade.value && dropTableCascade.value });
 }
 
+function truncateTableSqlOptions(): TableAdminSqlOptions {
+  return tableAdminSqlOptions({ cascade: canTruncateTableCascade.value && truncateTableCascade.value });
+}
+
 async function refreshDropTablePreviewSql() {
   dropTablePreviewSql.value = "";
   dropTablePreviewSql.value = await buildDropTableSql(dropTableSqlOptions()).catch(() => "");
@@ -2437,7 +2529,7 @@ async function refreshEmptyTablePreviewSql() {
 
 async function refreshTruncateTablePreviewSql() {
   truncateTablePreviewSql.value = "";
-  truncateTablePreviewSql.value = await buildTruncateTableSql(tableAdminSqlOptions()).catch(() => "");
+  truncateTablePreviewSql.value = await buildTruncateTableSql(truncateTableSqlOptions()).catch(() => "");
 }
 
 function dropTable() {
@@ -2485,6 +2577,7 @@ async function confirmEmptyTable() {
 }
 
 function truncateTable() {
+  truncateTableCascade.value = false;
   void refreshTruncateTablePreviewSql();
   showTruncateTableConfirm.value = true;
 }
@@ -2494,7 +2587,7 @@ async function confirmTruncateTable() {
   if (!node.connectionId || !node.database) return;
   try {
     await connectionStore.ensureConnected(node.connectionId);
-    const sql = truncateTablePreviewSql.value || (await buildTruncateTableSql(tableAdminSqlOptions()));
+    const sql = truncateTablePreviewSql.value || (await buildTruncateTableSql(truncateTableSqlOptions()));
     await api.executeQuery(node.connectionId, node.database, sql, node.schema);
     toast(t("contextMenu.truncateTableSuccess", { name: node.label }), 3000);
   } catch (e: any) {
@@ -4328,8 +4421,11 @@ function treeItemMenuItems(): ContextMenuItem[] {
   const node = props.node;
   const items: ContextMenuItem[] = [];
   const batchDropCount = selectedBatchDropTargets().length;
+  const batchTruncateCount = selectedBatchTruncateTargets().length;
   const deleteMenuLabel = (singleLabel: string) => (batchDropCount > 1 ? batchDropMenuLabel() : singleLabel);
   const deleteMenuAction = (singleAction: () => void) => (batchDropCount > 1 ? requestBatchDrop : singleAction);
+  const truncateMenuLabel = (singleLabel: string) => (batchTruncateCount > 1 ? batchTruncateMenuLabel() : singleLabel);
+  const truncateMenuAction = (singleAction: () => void) => (batchTruncateCount > 1 ? requestBatchTruncate : singleAction);
 
   // 1. Pin toggle
   if (canPin.value) {
@@ -4739,8 +4835,8 @@ function treeItemMenuItems(): ContextMenuItem[] {
       items.push({ label: t("contextMenu.copyTable"), action: copyTableToClipboard, icon: Copy });
       if (supportsTruncate.value) {
         destructiveActions.push({
-          label: t("contextMenu.truncateTable"),
-          action: truncateTable,
+          label: truncateMenuLabel(t("contextMenu.truncateTable")),
+          action: truncateMenuAction(truncateTable),
           icon: Scissors,
           variant: "destructive" as const,
         });
@@ -5207,13 +5303,45 @@ function treeItemMenuItems(): ContextMenuItem[] {
     :sql="truncateTablePreviewSql"
     :confirm-label="t('contextMenu.truncateTable')"
     @confirm="confirmTruncateTable"
-  />
+  >
+    <template v-if="canTruncateTableCascade" #options>
+      <label class="mb-3 flex items-start gap-2 rounded-md border bg-muted/20 px-3 py-2 text-sm">
+        <input v-model="truncateTableCascade" type="checkbox" class="mt-0.5 h-3.5 w-3.5 shrink-0 accent-primary" @change="refreshTruncateTablePreviewSql()" />
+        <span class="grid gap-0.5">
+          <span class="font-medium text-foreground">{{ t("contextMenu.truncateTableCascade") }}</span>
+          <span class="text-xs leading-5 text-muted-foreground">{{ t("contextMenu.truncateTableCascadeHint") }}</span>
+        </span>
+      </label>
+    </template>
+  </DangerConfirmDialog>
 
   <DangerConfirmDialog v-model:open="showDropObjectConfirm" :title="dropObjectConfirmTitle()" :message="dropObjectConfirmMessage()" :sql="dropObjectPreviewSql" :confirm-label="dropObjectMenuLabel()" @confirm="confirmDropObject" />
 
   <DangerConfirmDialog v-model:open="showDropTableChildObjectConfirm" :title="dropTableChildObjectConfirmTitle()" :message="dropTableChildObjectConfirmMessage()" :sql="dropTableChildObjectPreviewSql" :confirm-label="dropTableChildObjectMenuLabel()" @confirm="confirmDropTableChildObject" />
 
-  <DangerConfirmDialog v-model:open="showBatchDropConfirm" :title="batchDropConfirmTitle()" :message="batchDropConfirmMessage()" :sql="batchDropPreviewSql" :confirm-label="batchDropMenuLabel()" @confirm="confirmBatchDrop" />
+  <DangerConfirmDialog v-model:open="showBatchDropConfirm" :title="batchDropConfirmTitle()" :message="batchDropConfirmMessage()" :sql="batchDropPreviewSql" :confirm-label="batchDropMenuLabel()" @confirm="confirmBatchDrop">
+    <template v-if="canBatchDropCascade" #options>
+      <label class="mb-3 flex items-start gap-2 rounded-md border bg-muted/20 px-3 py-2 text-sm">
+        <input v-model="batchDropCascade" type="checkbox" class="mt-0.5 h-3.5 w-3.5 shrink-0 accent-primary" @change="refreshBatchDropPreviewSql()" />
+        <span class="grid gap-0.5">
+          <span class="font-medium text-foreground">{{ t("contextMenu.dropTableCascade") }}</span>
+          <span class="text-xs leading-5 text-muted-foreground">{{ t("contextMenu.dropTableCascadeHint") }}</span>
+        </span>
+      </label>
+    </template>
+  </DangerConfirmDialog>
+
+  <DangerConfirmDialog v-model:open="showBatchTruncateConfirm" :title="batchTruncateConfirmTitle()" :message="batchTruncateConfirmMessage()" :sql="batchTruncatePreviewSql" :confirm-label="batchTruncateMenuLabel()" @confirm="confirmBatchTruncate">
+    <template v-if="canBatchTruncateCascade" #options>
+      <label class="mb-3 flex items-start gap-2 rounded-md border bg-muted/20 px-3 py-2 text-sm">
+        <input v-model="batchTruncateCascade" type="checkbox" class="mt-0.5 h-3.5 w-3.5 shrink-0 accent-primary" @change="refreshBatchTruncatePreviewSql()" />
+        <span class="grid gap-0.5">
+          <span class="font-medium text-foreground">{{ t("contextMenu.truncateTableCascade") }}</span>
+          <span class="text-xs leading-5 text-muted-foreground">{{ t("contextMenu.truncateTableCascadeHint") }}</span>
+        </span>
+      </label>
+    </template>
+  </DangerConfirmDialog>
 
   <ProcedureExecutionDialog
     v-if="node.type === 'procedure' && node.connectionId && node.database"
