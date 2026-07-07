@@ -161,6 +161,64 @@ describe("sqlCompletion scoped context classification", () => {
     expect(context.suggestColumns).toBe(true);
   });
 
+  it("keeps alias-qualified column context after select-list subqueries", () => {
+    const sql = `
+      SELECT
+        p.id,
+        p.create_user_name 'creator',
+        (SELECT t.\`code\` FROM sys_user t WHERE t.user_id = p.apply_user_id) 'creator_code',
+        p.
+      FROM sys_process p
+      LIMIT 10
+    `;
+    const cursor = sql.indexOf("p.\n      FROM");
+    const context = getSqlCompletionContext(sql, cursor + 2);
+
+    expect(context.contextKind).toBe("alias_column");
+    expect(context.qualifier).toBe("p");
+    expect(context.suggestTables).toBe(false);
+    expect(context.exclusiveTableSuggestions).toBe(false);
+    expect(context.suggestColumns).toBe(true);
+  });
+
+  it("suggests alias columns after select-list subqueries instead of tables", () => {
+    const sql = `
+      SELECT
+        p.id,
+        p.create_user_name 'creator',
+        (SELECT t.\`code\` FROM sys_user t WHERE t.user_id = p.apply_user_id) 'creator_code',
+        p.
+      FROM sys_process p
+      LIMIT 10
+    `;
+    const cursor = sql.indexOf("p.\n      FROM") + 2;
+    const items = buildSqlCompletionItems(sql, cursor, {
+      dialect: "mysql",
+      tables: [
+        { name: "act_evt_log", type: "table" },
+        { name: "sys_process", type: "table" },
+        { name: "sys_user", type: "table" },
+      ],
+      columnsByTable: new Map([
+        [
+          "sys_process",
+          [
+            { name: "id", table: "sys_process" },
+            { name: "create_user_name", table: "sys_process" },
+            { name: "apply_user_id", table: "sys_process" },
+          ],
+        ],
+        ["sys_user", [{ name: "code", table: "sys_user" }]],
+      ]),
+    });
+
+    const columnLabels = items.filter((item) => item.type === "column").map((item) => item.label);
+    expect(columnLabels).toEqual(expect.arrayContaining(["id", "create_user_name", "apply_user_id"]));
+    expect(items[0]?.type).toBe("column");
+    expect(items.some((item) => item.type === "table")).toBe(false);
+    expect(items.some((item) => item.type === "keyword")).toBe(false);
+  });
+
   it("classifies unqualified WHERE field input as column context", () => {
     const sql = "SELECT * FROM A1User WHERE userc";
     const context = getSqlCompletionContext(sql, sql.length);

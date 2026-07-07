@@ -1670,7 +1670,7 @@ export function getSqlCompletionContext(sql: string, cursor: number): SqlComplet
   const suggestRoutines = inCallRoutineContext || oracleTableFunctionContext || inPotentialPackageMemberContext || (!preferColumnsOverGlobalRoutines && !exclusiveTableSuggestions && !exclusiveColumnSuggestions && !insertInfo && prefix.length >= 2);
 
   const statementKind = detectStatementKind(beforeCursor || fullStatement);
-  const preferredKeywords = preferredKeywordsForCompletion(beforeCursor, beforeToken, selectListColumnContext, exclusiveTableSuggestions, updateInfo, deleteInfo);
+  const preferredKeywords = qualifier ? [] : preferredKeywordsForCompletion(beforeCursor, beforeToken, selectListColumnContext, exclusiveTableSuggestions, updateInfo, deleteInfo);
   const contextKind = detectCompletionContextKind({
     qualifier,
     exclusiveTableSuggestions,
@@ -3106,7 +3106,26 @@ function isFollowedByJoin(beforeToken: string): boolean {
 
 function isInTableListContext(beforeToken: string): boolean {
   if (isInOrderOrGroupByContext(beforeToken)) return false;
-  return /,\s*$/.test(beforeToken) && /\b(?:from|join|update|into)\b/i.test(beforeToken);
+  const cleaned = stripSqlLiterals(beforeToken).trimEnd();
+  if (!/,\s*$/.test(cleaned)) return false;
+
+  // Only commas in the active top-level table segment should continue table completion.
+  const lastTableIntro = Math.max(lastTopLevelKeywordIndex(cleaned, "from"), lastTopLevelKeywordIndex(cleaned, "join"), lastTopLevelKeywordIndex(cleaned, "update"), lastTopLevelKeywordIndex(cleaned, "into"));
+  if (lastTableIntro < 0) return false;
+
+  const lastBoundary = Math.max(
+    lastTopLevelKeywordIndex(cleaned, "where"),
+    lastTopLevelKeywordIndex(cleaned, "set"),
+    lastTopLevelKeywordIndex(cleaned, "group"),
+    lastTopLevelKeywordIndex(cleaned, "order"),
+    lastTopLevelKeywordIndex(cleaned, "having"),
+    lastTopLevelKeywordIndex(cleaned, "limit"),
+    lastTopLevelKeywordIndex(cleaned, "offset"),
+    lastTopLevelKeywordIndex(cleaned, "union"),
+    lastTopLevelKeywordIndex(cleaned, "intersect"),
+    lastTopLevelKeywordIndex(cleaned, "except"),
+  );
+  return lastBoundary < lastTableIntro;
 }
 
 function collectCompletionColumns(columnsByTable: Map<string, SqlCompletionColumn[]>): Array<SqlCompletionColumn & { key: string }> {
