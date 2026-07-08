@@ -10,6 +10,8 @@ import com.dbx.agent.JdbcIdentifiers;
 import com.dbx.agent.JsonRpcServer;
 import com.dbx.agent.TableInfo;
 import com.dbx.agent.TriggerInfo;
+import com.dbx.agent.ExecuteQueryOptions;
+import com.dbx.agent.QueryResult;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
@@ -30,6 +32,19 @@ import java.util.Locale;
 // at the catalog root with no databases (Lance). Mirrors the StarRocks catalog flow.
 public final class SparkAgent extends AbstractJdbcAgent {
     private String configuredCatalog;
+
+    @Override
+    public QueryResult executeQuery(String sql, String schema, ExecuteQueryOptions options) {
+        // Hive JDBC fetches rows via Thrift FetchResults in batches controlled
+        // by fetchSize. A large fetchSize can fail with "Error retrieving next
+        // row" when the result contains large binary/struct columns. Use a
+        // small fetchSize (50) so each Thrift batch stays within limits.
+        return super.executeQuery(sql, schema, new ExecuteQueryOptions(
+            options.getMaxRows(),
+            50,
+            options.getTimeoutSecs()
+        ));
+    }
 
     @Override
     protected String driverClass() {
