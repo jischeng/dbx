@@ -2223,6 +2223,7 @@ export default {
   dangerDialog: {
     title: "Dangerous Operation",
     message: "This SQL statement may modify or delete data irreversibly. Are you sure you want to execute it?",
+    redisCommandMessage: "This Redis command may modify data and cannot be undone automatically. Continue?",
     suppressFuturePrompts: "Do not ask again for dangerous SQL",
     wrapLines: "Toggle word wrap",
     deleteMessage: "This delete operation may be irreversible. Continue?",

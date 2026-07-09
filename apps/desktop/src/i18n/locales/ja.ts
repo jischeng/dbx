@@ -2153,6 +2153,7 @@ export default withEnglishFallback({
   dangerDialog: {
     title: "危険な操作",
     message: "このSQL文はデータを不可逆的に変更または削除する可能性があります。実行してもよろしいですか？",
+    redisCommandMessage: "このRedisコマンドはデータを変更し、自動的に元に戻せない可能性があります。続行しますか？",
     suppressFuturePrompts: "危険なSQLの確認を今後表示しない",
     wrapLines: "折り返し表示を切り替え",
     deleteMessage: "この削除操作は元に戻せない可能性があります。続行しますか？",

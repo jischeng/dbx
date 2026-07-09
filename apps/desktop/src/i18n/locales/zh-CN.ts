@@ -2223,6 +2223,7 @@ export default withEnglishFallback({
   dangerDialog: {
     title: "危险操作",
     message: "此 SQL 语句可能不可逆地修改或删除数据，确认要执行吗？",
+    redisCommandMessage: "此 Redis 命令可能会修改数据，且无法自动撤销，确认要继续吗？",
     suppressFuturePrompts: "以后执行危险 SQL 不再提示",
     wrapLines: "切换自动换行",
     deleteMessage: "此删除操作可能不可逆，确认要继续吗？",

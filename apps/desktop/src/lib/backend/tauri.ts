@@ -1391,7 +1391,7 @@ export interface RedisScanResult {
   total_keys: number;
 }
 
-export type RedisCommandSafety = "allowed" | "confirm" | "blocked";
+export type RedisCommandSafety = "allowed" | "write" | "confirm" | "blocked";
 
 export interface RedisCommandResult {
   command: string;

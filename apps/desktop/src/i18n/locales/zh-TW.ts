@@ -2010,6 +2010,7 @@ export default withEnglishFallback({
   dangerDialog: {
     title: "危險操作",
     message: "此 SQL 語句可能不可逆地修改或刪除資料，確認要執行嗎？",
+    redisCommandMessage: "此 Redis 命令可能會修改資料，且無法自動復原，確認要繼續嗎？",
     suppressFuturePrompts: "之後執行危險 SQL 不再提示",
     wrapLines: "切換自動換行",
     deleteMessage: "此刪除操作可能不可逆，確認要繼續嗎？",

@@ -2155,6 +2155,7 @@ export default withEnglishFallback({
   dangerDialog: {
     title: "Operación peligrosa",
     message: "Esta sentencia SQL puede modificar o eliminar datos de forma irreversible. ¿Estás seguro de que deseas ejecutarla?",
+    redisCommandMessage: "Este comando de Redis puede modificar datos y no se puede deshacer automáticamente. ¿Continuar?",
     suppressFuturePrompts: "No volver a preguntar para SQL peligroso",
     wrapLines: "Alternar ajuste de línea",
     deleteMessage: "Esta operación de eliminación puede ser irreversible. ¿Continuar?",
