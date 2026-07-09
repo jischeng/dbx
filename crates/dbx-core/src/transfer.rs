@@ -99,6 +99,7 @@ pub struct TransferProgress {
     pub total_rows: Option<u64>,
     pub status: TransferStatus,
     pub error: Option<String>,
+    pub terminal: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -3789,6 +3790,7 @@ where
             total_rows,
             status: TransferStatus::Running,
             error: None,
+            terminal: false,
         });
 
         if row_count < batch_size {
@@ -4148,6 +4150,7 @@ where
             total_rows,
             status: TransferStatus::Running,
             error: None,
+            terminal: false,
         });
 
         if row_count < batch_size {
@@ -4232,6 +4235,7 @@ where
             total_rows: Some(total_steps as u64),
             status: TransferStatus::Running,
             error: None,
+            terminal: false,
         });
         execute_on_pool(state, target_pool_key, &generate_postgres_extension_ddl(&extension, &request.target_schema))
             .await
@@ -4252,6 +4256,7 @@ where
             total_rows: Some(total_steps as u64),
             status: TransferStatus::Running,
             error: None,
+            terminal: false,
         });
         execute_on_pool(state, target_pool_key, &generate_postgres_enum_ddl(&enum_type, &request.target_schema))
             .await
@@ -4272,6 +4277,7 @@ where
             total_rows: Some(total_steps as u64),
             status: TransferStatus::Running,
             error: None,
+            terminal: false,
         });
         execute_on_pool(state, target_pool_key, &generate_postgres_domain_ddl(&domain, &request.target_schema))
             .await
@@ -4373,6 +4379,7 @@ where
             total_rows: Some(total_steps as u64),
             status: TransferStatus::Running,
             error: None,
+            terminal: false,
         });
 
         let rewritten_source = match object.object_type {
@@ -4414,6 +4421,7 @@ where
                 total_rows: Some(total_steps as u64),
                 status: TransferStatus::Running,
                 error: None,
+                terminal: false,
             });
             execute_on_pool(state, target_pool_key, &statement)
                 .await
@@ -4435,6 +4443,7 @@ where
             total_rows: Some(total_steps as u64),
             status: TransferStatus::Running,
             error: None,
+            terminal: false,
         });
         let full_table = qualified_table(&trigger.table_name, &request.target_schema, &DatabaseType::Postgres);
         let drop_sql = format!(
@@ -4454,6 +4463,7 @@ where
             total_rows: Some(total_steps as u64),
             status: TransferStatus::Running,
             error: None,
+            terminal: false,
         });
         let create_sql = rewrite_postgres_trigger_table_schema(
             &ensure_sql_statement_terminated(&trigger.source),
@@ -4480,6 +4490,7 @@ where
             total_rows: Some(total_steps as u64),
             status: TransferStatus::Running,
             error: None,
+            terminal: false,
         });
         execute_on_pool(state, target_pool_key, &statement)
             .await
@@ -4500,6 +4511,7 @@ where
             total_rows: Some(total_steps as u64),
             status: TransferStatus::Running,
             error: None,
+            terminal: false,
         });
         let ownership_owner = if matches!(request.ownership_policy, TransferOwnershipPolicy::ReassignMissing)
             && !ownership_existing_roles.contains(&statement.owner)
@@ -4530,6 +4542,7 @@ where
             total_rows: Some(total_steps as u64),
             status: TransferStatus::Running,
             error: None,
+            terminal: false,
         });
         execute_on_pool(state, target_pool_key, &statement)
             .await
