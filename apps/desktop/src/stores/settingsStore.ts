@@ -824,6 +824,7 @@ function saveEditorSettings(settings: EditorSettings) {
 }
 
 export const useSettingsStore = defineStore("settings", () => {
+  const settingsPageActive = ref(false);
   const aiConfig = ref<AiConfig>(normalizeAiConfig({ provider: "claude" }));
   const isAiConfigLoaded = ref(false);
   const aiProviderConfigs = ref<Partial<Record<AiProvider, AiConfig>>>({});
@@ -1071,6 +1072,7 @@ export const useSettingsStore = defineStore("settings", () => {
   }
 
   return {
+    settingsPageActive,
     aiConfig,
     isAiConfigLoaded,
     aiProviderConfigs,

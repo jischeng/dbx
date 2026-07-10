@@ -305,6 +305,7 @@ function getI18nT() {
 
 export const useQueryStore = defineStore("query", () => {
   const t = getI18nT();
+  const settingsStore = useSettingsStore();
   const tabs = ref<QueryTab[]>([]);
   const activeTabId = ref<string | null>(null);
   const isOpenTabsLoaded = ref(false);
@@ -818,7 +819,7 @@ export const useQueryStore = defineStore("query", () => {
     if (title) {
       const existing = findTabByIdentity(connectionId, database, title, mode, schema);
       if (existing) {
-        activeTabId.value = existing.id;
+        switchTab(existing.id);
         return existing.id;
       }
     }
@@ -847,7 +848,7 @@ export const useQueryStore = defineStore("query", () => {
     const title = schema ? `${schema} objects` : `${database} objects`;
     const existing = tabs.value.find((tab) => tab.mode === "objects" && tab.connectionId === connectionId && tab.database === database && (tab.objectBrowser?.schema || "") === (schema || ""));
     if (existing) {
-      activeTabId.value = existing.id;
+      switchTab(existing.id);
       return existing.id;
     }
 
@@ -873,10 +874,15 @@ export const useQueryStore = defineStore("query", () => {
     return id;
   }
 
+  function switchTab(tabId: string) {
+    activeTabId.value = tabId;
+    settingsStore.settingsPageActive = false;
+  }
+
   function openUserAdmin(connectionId: string) {
     const existing = tabs.value.find((tab) => tab.mode === "users" && tab.connectionId === connectionId);
     if (existing) {
-      activeTabId.value = existing.id;
+      switchTab(existing.id);
       return existing.id;
     }
 
@@ -901,7 +907,7 @@ export const useQueryStore = defineStore("query", () => {
   function openDamengJobAdmin(connectionId: string) {
     const existing = tabs.value.find((tab) => tab.mode === "dameng-jobs" && tab.connectionId === connectionId);
     if (existing) {
-      activeTabId.value = existing.id;
+      switchTab(existing.id);
       return existing.id;
     }
 
@@ -927,7 +933,7 @@ export const useQueryStore = defineStore("query", () => {
     const title = `${database}.${bucketName}`;
     const existing = tabs.value.find((tab) => tab.mode === "mongo-bucket" && tab.connectionId === connectionId && tab.database === database && tab.mongoBucket?.bucketName === bucketName);
     if (existing) {
-      activeTabId.value = existing.id;
+      switchTab(existing.id);
       return existing.id;
     }
 
@@ -954,7 +960,7 @@ export const useQueryStore = defineStore("query", () => {
   function openMongoGridFs(connectionId: string, database: string) {
     const existing = tabs.value.find((tab) => tab.mode === "mongo-gridfs" && tab.connectionId === connectionId && tab.database === database);
     if (existing) {
-      activeTabId.value = existing.id;
+      switchTab(existing.id);
       return existing.id;
     }
 
@@ -980,7 +986,7 @@ export const useQueryStore = defineStore("query", () => {
     if (existing) {
       if (target?.tenant) existing.mqTenant = target.tenant;
       if (target?.initialTab) existing.mqInitialTab = target.initialTab;
-      activeTabId.value = existing.id;
+      switchTab(existing.id);
       return existing.id;
     }
 
@@ -1011,7 +1017,7 @@ export const useQueryStore = defineStore("query", () => {
     if (existing) {
       existing.nacosNamespaceName = namespaceName;
       if (!existing.customTitle) existing.title = `${useConnectionStore().getConfig(connectionId)?.name || "Nacos"}:${namespaceName}`;
-      activeTabId.value = existing.id;
+      switchTab(existing.id);
       return existing.id;
     }
 
@@ -1048,7 +1054,7 @@ export const useQueryStore = defineStore("query", () => {
       const existing = tabs.value.find((tab) => tab.mode === "structure" && tab.connectionId === connectionId && tab.database === database && (tab.structureTableName || "") === resolvedTableName);
       if (existing) {
         applyTableStructureInitialTab(existing, initialTab, initialTarget);
-        activeTabId.value = existing.id;
+        switchTab(existing.id);
         return existing.id;
       }
     }
@@ -1674,7 +1680,7 @@ export const useQueryStore = defineStore("query", () => {
         existing.editorSelection = restored.selection;
         existing.editorViewport = restored.viewport;
       }
-      activeTabId.value = existing.id;
+      switchTab(existing.id);
       return existing.id;
     }
 
@@ -3445,6 +3451,7 @@ export const useQueryStore = defineStore("query", () => {
     hasDirtyTabs,
     isConfirmingAppClose,
     createTab,
+    switchTab,
     closeTab,
     forceClosePendingTab,
     forceCloseAllPendingTabs,
