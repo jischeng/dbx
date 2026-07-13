@@ -1301,6 +1301,7 @@ async function openData() {
     tabId,
     cachedTableMeta ?? {
       catalog: node.catalog,
+      database: node.database,
       schema: tableSchema,
       tableName: node.label,
       tableType,
@@ -1410,6 +1411,7 @@ async function openData() {
       databaseType: effectiveDbType,
       identifierQuote: connectionStore.connectionIdentifierQuote?.(node.connectionId),
       schema: tableSchema,
+      database: node.database,
       tableName: node.label,
       tableType,
       catalog: node.catalog,

@@ -870,7 +870,7 @@ export const useQueryStore = defineStore("query", () => {
     return tabs.value.find((tab) => tab.connectionId === connectionId && tab.database === database && tab.title === title && tab.mode === mode && (tab.schema || "") === (schema || ""));
   }
 
-  function createTab(connectionId: string, database: string, title?: string, mode: QueryTab["mode"] = "query", schema?: string, initialSql?: string) {
+  function createTab(connectionId: string, database: string, title?: string, mode: QueryTab["mode"] = "query", schema?: string, initialSql?: string, catalog?: string) {
     if (title) {
       const existing = findTabByIdentity(connectionId, database, title, mode, schema);
       if (existing) {
@@ -887,6 +887,7 @@ export const useQueryStore = defineStore("query", () => {
       connectionId,
       database,
       schema,
+      catalog,
       sql: initialSql ?? "",
       isExecuting: false,
       isCancelling: false,
@@ -1169,7 +1170,7 @@ export const useQueryStore = defineStore("query", () => {
     tab.structureInitialTabRequestId = (tab.structureInitialTabRequestId ?? 0) + 1;
   }
 
-  function openTableStructure(connectionId: string, database: string, schema?: string, tableName?: string, initialTab?: TableInfoTab, initialTarget?: TableStructureEditorTarget) {
+  function openTableStructure(connectionId: string, database: string, schema?: string, tableName?: string, initialTab?: TableInfoTab, initialTarget?: TableStructureEditorTarget, catalog?: string) {
     const resolvedTableName = tableName || "";
     if (resolvedTableName) {
       const existing = tabs.value.find((tab) => tab.mode === "structure" && tab.connectionId === connectionId && tab.database === database && (tab.structureTableName || "") === resolvedTableName);
@@ -1188,6 +1189,7 @@ export const useQueryStore = defineStore("query", () => {
       connectionId,
       database,
       schema,
+      catalog,
       sql: "",
       isExecuting: false,
       isCancelling: false,
@@ -2563,7 +2565,7 @@ export const useQueryStore = defineStore("query", () => {
         mongoCommands = splitMongoCommandRanges(sql);
       }
       const effectiveDbType = effectiveDatabaseTypeForConnection(conn);
-      const executionDatabase = dataTabExecutionDatabase(conn, tab.database, tab.mode === "data" ? tab.tableMeta?.catalog : undefined);
+      const executionDatabase = dataTabExecutionDatabase(conn, tab.database, tab.mode === "data" ? tab.tableMeta?.catalog : tab.catalog);
       const useAgentCursor = usesAgentCursorForQuery(conn?.db_type);
       const queryTimeoutSecs = queryTimeoutSecsForConnection(conn);
       const settingsStore = useSettingsStore();
@@ -3006,6 +3008,7 @@ export const useQueryStore = defineStore("query", () => {
                   databaseType: effectiveDbType,
                   identifierQuote: useConnectionStore().connectionIdentifierQuote?.(current.connectionId),
                   catalog: tableMeta.catalog,
+                  database: tableMeta.database,
                   schema: tableMeta.schema,
                   tableName: tableMeta.tableName,
                   whereInput: current.whereInput?.trim() || undefined,
@@ -3030,7 +3033,7 @@ export const useQueryStore = defineStore("query", () => {
           countQueryTotalRowsInBackground({
             tabId: id,
             connectionId: current.connectionId,
-            database: current.database,
+            database: executionDatabase,
             schema: current.schema,
             countSql,
             countSqlTarget: dataCountTarget

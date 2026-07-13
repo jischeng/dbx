@@ -723,6 +723,9 @@ export interface QueryTab {
   connectionId: string;
   database: string;
   schema?: string;
+  /** Doris / StarRocks multi-catalog: the external catalog this tab's
+   * database belongs to (undefined for internal/default catalog). */
+  catalog?: string;
   sql: string;
   savedSqlId?: string;
   externalSqlPath?: string;
@@ -804,6 +807,7 @@ export interface QueryTab {
     tableName: string;
     tableType?: string;
     catalog?: string;
+    database?: string;
     columns: ColumnInfo[];
     primaryKeys: string[];
   };
