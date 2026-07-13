@@ -1668,6 +1668,7 @@ export const useQueryStore = defineStore("query", () => {
       const sql = await buildTableSelectSql({
         databaseType: effectiveDbType,
         identifierQuote,
+        database: tableMeta.database,
         schema: tableMeta.schema,
         tableName: tableMeta.tableName,
         tableType: tableMeta.tableType,
@@ -3637,6 +3638,7 @@ export const useQueryStore = defineStore("query", () => {
           const sql = await api.buildTableSelectSql({
             databaseType: effectiveDbType,
             identifierQuote,
+            database: tableMeta.database,
             schema: tableMeta.schema,
             tableName: tableMeta.tableName,
             tableType: tableMeta.tableType,
