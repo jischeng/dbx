@@ -15,6 +15,7 @@ import type { ConnectionConfig } from "@/types/database";
 import * as api from "@/lib/backend/api";
 import { executeWithProductionSqlGuard } from "@/lib/database/productionExecutionGuard";
 import { grantsFromQueryResult, getDatabaseUserAdminProvider, supportsDatabaseUserAdmin, type DatabaseUserIdentity, type PrivilegeScope } from "@/lib/database/databaseUserAdmin";
+import { effectiveDatabaseTypeForConnection } from "@/lib/database/jdbcDialect";
 
 const props = defineProps<{
   connection: ConnectionConfig;
@@ -54,8 +55,9 @@ const grantOption = ref(false);
 const selectedPrivileges = ref<string[]>(["SELECT"]);
 const createCanLogin = ref(true);
 
-const supported = computed(() => supportsDatabaseUserAdmin(props.connection.db_type));
-const provider = computed(() => getDatabaseUserAdminProvider(props.connection.db_type));
+const effectiveType = computed(() => effectiveDatabaseTypeForConnection(props.connection));
+const supported = computed(() => supportsDatabaseUserAdmin(effectiveType.value));
+const provider = computed(() => getDatabaseUserAdminProvider(effectiveType.value));
 const isPostgres = computed(() => provider.value?.dialect === "postgres");
 const selectedUser = computed(() => users.value.find((user) => userKey(user) === selectedUserKey.value));
 const filteredUsers = computed(() => {
@@ -135,7 +137,7 @@ async function loadGrants() {
     const result = await api.executeQuery(props.connection.id, "", userProvider.showGrantsSql(user), undefined, undefined, {
       maxRows: 1000,
     });
-    grants.value = grantsFromQueryResult(result);
+    grants.value = (userProvider.parseGrants ?? grantsFromQueryResult)(result);
   } catch (error: any) {
     grantError.value = error?.message || String(error);
     grants.value = [];

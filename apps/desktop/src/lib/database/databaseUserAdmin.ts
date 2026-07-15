@@ -39,6 +39,7 @@ export interface DatabaseUserAdminProvider {
   dropUserSql(user: DatabaseUserIdentity): string;
   grantPrivilegesSql(input: PrivilegeChangeInput): string;
   revokePrivilegesSql(input: PrivilegeChangeInput): string;
+  parseGrants?(result: QueryResult): string[];
   label(user: DatabaseUserIdentity): string;
   detail(user: DatabaseUserIdentity): string | undefined;
   privilegesForScope(scope: PrivilegeScope): readonly string[];
@@ -48,6 +49,7 @@ export interface DatabaseUserAdminProvider {
 export const MYSQL_USER_ADMIN_TYPES = new Set<DatabaseType>(["mysql", "goldendb"]);
 export const KINGBASE_USER_ADMIN_TYPES = new Set<DatabaseType>(["kingbase"]);
 export const POSTGRES_USER_ADMIN_TYPES = new Set<DatabaseType>(["postgres", "gaussdb", "highgo", "kwdb", "opengauss", "questdb", "vastbase"]);
+export const STARROCKS_USER_ADMIN_TYPES = new Set<DatabaseType>(["starrocks"]);
 
 export const MYSQL_COMMON_PRIVILEGES = ["SELECT", "INSERT", "UPDATE", "DELETE", "CREATE", "DROP", "ALTER", "INDEX", "REFERENCES", "EXECUTE", "SHOW VIEW", "TRIGGER", "EVENT", "CREATE TEMPORARY TABLES"] as const;
 
@@ -64,6 +66,7 @@ export function getDatabaseUserAdminProvider(dbType: DatabaseType | undefined): 
   if (MYSQL_USER_ADMIN_TYPES.has(dbType)) return mysqlUserAdminProvider;
   if (KINGBASE_USER_ADMIN_TYPES.has(dbType)) return kingbaseUserAdminProvider;
   if (POSTGRES_USER_ADMIN_TYPES.has(dbType)) return postgresUserAdminProvider;
+  if (STARROCKS_USER_ADMIN_TYPES.has(dbType)) return starrocksUserAdminProvider;
   return null;
 }
 
@@ -101,6 +104,25 @@ export function mysqlListUsersSql(): string {
 
 export function mysqlListUsersFallbackSql(): string {
   return "SELECT DISTINCT GRANTEE AS grantee FROM information_schema.USER_PRIVILEGES ORDER BY GRANTEE;";
+}
+
+export function starrocksListUsersSql(): string {
+  return "SHOW USERS;";
+}
+
+export function starrocksUsersResult(result: QueryResult): DatabaseUserIdentity[] {
+  const userIndex = columnIndex(result, "user", "User");
+  if (userIndex < 0) return [];
+  return result.rows.flatMap((row) => {
+    const parsed = parseMySqlGrantee(String(row[userIndex] ?? ""));
+    return parsed ? [parsed] : [];
+  });
+}
+
+export function starrocksGrantsResult(result: QueryResult): string[] {
+  const grantsIndex = columnIndex(result, "grants", "Grants");
+  if (grantsIndex < 0) return result.rows.map((row) => String(row[0] ?? "")).filter(Boolean);
+  return result.rows.map((row) => String(row[grantsIndex] ?? "")).filter(Boolean);
 }
 
 export function mysqlShowGrantsSql(user: DatabaseUserIdentity): string {
@@ -465,4 +487,23 @@ export const kingbaseUserAdminProvider: DatabaseUserAdminProvider = {
   ...postgresUserAdminProvider,
   listUsersSql: kingbaseListRolesSql,
   showGrantsSql: kingbaseShowGrantsSql,
+};
+
+export const starrocksUserAdminProvider: DatabaseUserAdminProvider = {
+  dialect: "mysql",
+  defaultScope: "mysql",
+  listUsersSql: starrocksListUsersSql,
+  parseUsers: starrocksUsersResult,
+  showGrantsSql: mysqlShowGrantsSql,
+  parseGrants: starrocksGrantsResult,
+  createUserSql: mysqlCreateUserSql,
+  alterPasswordSql: mysqlAlterUserPasswordSql,
+  alterLoginSql: (user, enabled) => mysqlAlterUserAccountLockSql(user, !enabled),
+  dropUserSql: mysqlDropUserSql,
+  grantPrivilegesSql: mysqlGrantPrivilegesSql,
+  revokePrivilegesSql: mysqlRevokePrivilegesSql,
+  label: mysqlUserLabel,
+  detail: (user) => user.plugin,
+  privilegesForScope: () => MYSQL_COMMON_PRIVILEGES,
+  defaultPrivilegesForScope: () => ["SELECT"],
 };

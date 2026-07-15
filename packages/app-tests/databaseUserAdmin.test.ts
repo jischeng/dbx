@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert";
 import { test } from "vitest";
 import {
   grantsFromQueryResult,
+  getDatabaseUserAdminProvider,
   mysqlAlterUserAccountLockSql,
   mysqlAlterUserPasswordSql,
   mysqlCreateUserSql,
@@ -25,6 +26,9 @@ import {
   quoteMySqlIdentifier,
   quoteMySqlString,
   quotePostgresIdentifier,
+  starrocksGrantsResult,
+  starrocksListUsersSql,
+  starrocksUsersResult,
   usersFromMySqlGranteeResult,
   usersFromMySqlUserResult,
   usersFromPostgresRolesResult,
@@ -174,4 +178,76 @@ test("builds PostgreSQL role metadata SQL without directly requiring rolbypassrl
   assert.match(grantsSql, /AS rolbypassrls/);
   assert.match(grantsSql, /n\.nspname NOT LIKE 'pg~_%' ESCAPE '~'/);
   assert.ok(!grantsSql.includes("ESCAPE '\\'"));
+});
+
+test("builds StarRocks user listing SQL", () => {
+  assert.equal(starrocksListUsersSql(), "SHOW USERS;");
+});
+
+test("parses StarRocks SHOW USERS result", () => {
+  assert.deepEqual(
+    starrocksUsersResult(
+      result(
+        ["User"],
+        [
+          ["'root'@'%'"],
+          ["'grader_reader'@'%'"],
+          ["'o''brien'@'localhost'"],
+          ["malformed"],
+        ],
+      ),
+    ),
+    [
+      { user: "root", host: "%" },
+      { user: "grader_reader", host: "%" },
+      { user: "o'brien", host: "localhost" },
+    ],
+  );
+});
+
+test("parses StarRocks SHOW GRANTS three-column result", () => {
+  assert.deepEqual(
+    starrocksGrantsResult(
+      result(
+        ["UserIdentity", "Catalog", "Grants"],
+        [
+          ["'root'@'%'", null, "GRANT 'root' TO 'root'@'%'"],
+          ["'grader_reader'@'%'", "default_catalog", "GRANT SELECT ON ALL TABLES IN DATABASE grader_events TO USER 'grader_reader'@'%'"],
+          ["'reader'@'%'", "paimon", null],
+        ],
+      ),
+    ),
+    [
+      "GRANT 'root' TO 'root'@'%'",
+      "GRANT SELECT ON ALL TABLES IN DATABASE grader_events TO USER 'grader_reader'@'%'",
+    ],
+  );
+});
+
+test("StarRocks grants parser falls back to first column when Grants column is absent", () => {
+  assert.deepEqual(
+    starrocksGrantsResult(result(["Grants for app@%"], [["GRANT SELECT ON `app`.* TO 'app'@'%'"]])),
+    ["GRANT SELECT ON `app`.* TO 'app'@'%'"],
+  );
+});
+
+test("routes StarRocks to the StarRocks user admin provider", () => {
+  const provider = getDatabaseUserAdminProvider("starrocks");
+  assert.ok(provider, "expected a provider for starrocks");
+  assert.equal(provider?.dialect, "mysql");
+  assert.equal(provider?.listUsersSql(), "SHOW USERS;");
+  assert.equal(provider?.showGrantsSql({ user: "root", host: "%" }), "SHOW GRANTS FOR 'root'@'%';");
+  assert.equal(
+    provider?.createUserSql({ user: "app", host: "%", password: "secret" }),
+    "CREATE USER 'app'@'%' IDENTIFIED BY 'secret';",
+  );
+  assert.equal(provider?.dropUserSql({ user: "app", host: "%" }), "DROP USER 'app'@'%';");
+  assert.equal(
+    provider?.grantPrivilegesSql({
+      user: { user: "reporter", host: "%" },
+      privileges: ["SELECT"],
+      database: "analytics",
+    }),
+    "GRANT SELECT ON `analytics`.* TO 'reporter'@'%';",
+  );
 });
