@@ -1,5 +1,6 @@
-import type { DatabaseType, QueryResult } from "@/types/database";
+import type { ConnectionConfig, DatabaseType, QueryResult } from "@/types/database";
 import { supportsDatabaseFeature } from "@/lib/database/databaseDriverManifest";
+import { effectiveDatabaseTypeForConnection } from "@/lib/database/jdbcDialect";
 
 export type UserAdminDialect = "mysql" | "postgres";
 export type PrivilegeScope = "mysql" | "database" | "schema" | "table" | "role";
@@ -33,42 +34,25 @@ export interface DatabaseUserAdminProvider {
   parseUsers(result: QueryResult): DatabaseUserIdentity[];
   parseFallbackUsers?: (result: QueryResult) => DatabaseUserIdentity[];
   showGrantsSql(user: DatabaseUserIdentity): string;
-  createUserSql(input: CreatePrincipalInput): string;
-  alterPasswordSql(user: DatabaseUserIdentity, password: string): string;
-  alterLoginSql(user: DatabaseUserIdentity, enabled: boolean): string;
-  dropUserSql(user: DatabaseUserIdentity): string;
-  grantPrivilegesSql(input: PrivilegeChangeInput): string;
-  revokePrivilegesSql(input: PrivilegeChangeInput): string;
   parseGrants?(result: QueryResult): string[];
+  createUserSql?(input: CreatePrincipalInput): string;
+  alterPasswordSql?(user: DatabaseUserIdentity, password: string): string;
+  alterLoginSql?(user: DatabaseUserIdentity, enabled: boolean): string;
+  dropUserSql?(user: DatabaseUserIdentity): string;
+  grantPrivilegesSql?(input: PrivilegeChangeInput): string;
+  revokePrivilegesSql?(input: PrivilegeChangeInput): string;
   label(user: DatabaseUserIdentity): string;
   detail(user: DatabaseUserIdentity): string | undefined;
-  privilegesForScope(scope: PrivilegeScope): readonly string[];
-  defaultPrivilegesForScope(scope: PrivilegeScope): string[];
+  privilegesForScope?(scope: PrivilegeScope): readonly string[];
+  defaultPrivilegesForScope?(scope: PrivilegeScope): string[];
 }
 
-export const MYSQL_USER_ADMIN_TYPES = new Set<DatabaseType>(["mysql", "goldendb"]);
-export const KINGBASE_USER_ADMIN_TYPES = new Set<DatabaseType>(["kingbase"]);
-export const POSTGRES_USER_ADMIN_TYPES = new Set<DatabaseType>(["postgres", "gaussdb", "highgo", "kwdb", "opengauss", "questdb", "vastbase"]);
-export const STARROCKS_USER_ADMIN_TYPES = new Set<DatabaseType>(["starrocks"]);
-
 export const MYSQL_COMMON_PRIVILEGES = ["SELECT", "INSERT", "UPDATE", "DELETE", "CREATE", "DROP", "ALTER", "INDEX", "REFERENCES", "EXECUTE", "SHOW VIEW", "TRIGGER", "EVENT", "CREATE TEMPORARY TABLES"] as const;
+export const STARROCKS_TABLE_PRIVILEGES = ["SELECT", "INSERT", "UPDATE", "DELETE", "ALTER", "DROP", "EXPORT", "ALL"] as const;
 
 export const POSTGRES_DATABASE_PRIVILEGES = ["CONNECT", "CREATE", "TEMPORARY"] as const;
 export const POSTGRES_SCHEMA_PRIVILEGES = ["USAGE", "CREATE"] as const;
 export const POSTGRES_TABLE_PRIVILEGES = ["SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"] as const;
-
-export function supportsDatabaseUserAdmin(dbType: DatabaseType | undefined): boolean {
-  return !!dbType && supportsDatabaseFeature(dbType, "userAdmin") && !!getDatabaseUserAdminProvider(dbType);
-}
-
-export function getDatabaseUserAdminProvider(dbType: DatabaseType | undefined): DatabaseUserAdminProvider | null {
-  if (!dbType) return null;
-  if (MYSQL_USER_ADMIN_TYPES.has(dbType)) return mysqlUserAdminProvider;
-  if (KINGBASE_USER_ADMIN_TYPES.has(dbType)) return kingbaseUserAdminProvider;
-  if (POSTGRES_USER_ADMIN_TYPES.has(dbType)) return postgresUserAdminProvider;
-  if (STARROCKS_USER_ADMIN_TYPES.has(dbType)) return starrocksUserAdminProvider;
-  return null;
-}
 
 export function quoteSqlString(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
@@ -162,6 +146,27 @@ export function mysqlGrantPrivilegesSql(input: PrivilegeChangeInput): string {
 export function mysqlRevokePrivilegesSql(input: PrivilegeChangeInput): string {
   const privileges = normalizePrivileges(input.privileges).join(", ");
   return `REVOKE ${privileges} ON ${mysqlPrivilegeTargetSql(input.database, input.table)} FROM ${mysqlUserAccount(input.user)};`;
+}
+
+export function starrocksPrivilegeTargetSql(database: string, table = "*"): string {
+  const db = database.trim();
+  const tbl = table.trim();
+  if (!tbl || tbl === "*") {
+    return !db || db === "*" ? "ALL TABLES IN ALL DATABASES" : `ALL TABLES IN DATABASE ${quoteMySqlIdentifier(db)}`;
+  }
+  const tableName = quoteMySqlIdentifier(tbl);
+  return !db || db === "*" ? `TABLE ${tableName}` : `TABLE ${quoteMySqlIdentifier(db)}.${tableName}`;
+}
+
+export function starrocksGrantPrivilegesSql(input: PrivilegeChangeInput): string {
+  const privileges = normalizePrivileges(input.privileges).join(", ");
+  const grantOption = input.grantOption ? " WITH GRANT OPTION" : "";
+  return `GRANT ${privileges} ON ${starrocksPrivilegeTargetSql(input.database, input.table)} TO USER ${mysqlUserAccount(input.user)}${grantOption};`;
+}
+
+export function starrocksRevokePrivilegesSql(input: PrivilegeChangeInput): string {
+  const privileges = normalizePrivileges(input.privileges).join(", ");
+  return `REVOKE ${privileges} ON ${starrocksPrivilegeTargetSql(input.database, input.table)} FROM USER ${mysqlUserAccount(input.user)};`;
 }
 
 export function normalizePrivileges(privileges: string[], fallback = "SELECT"): string[] {
@@ -491,19 +496,49 @@ export const kingbaseUserAdminProvider: DatabaseUserAdminProvider = {
 
 export const starrocksUserAdminProvider: DatabaseUserAdminProvider = {
   dialect: "mysql",
-  defaultScope: "mysql",
+  defaultScope: "table",
   listUsersSql: starrocksListUsersSql,
   parseUsers: starrocksUsersResult,
   showGrantsSql: mysqlShowGrantsSql,
   parseGrants: starrocksGrantsResult,
   createUserSql: mysqlCreateUserSql,
   alterPasswordSql: mysqlAlterUserPasswordSql,
-  alterLoginSql: (user, enabled) => mysqlAlterUserAccountLockSql(user, !enabled),
   dropUserSql: mysqlDropUserSql,
-  grantPrivilegesSql: mysqlGrantPrivilegesSql,
-  revokePrivilegesSql: mysqlRevokePrivilegesSql,
+  grantPrivilegesSql: starrocksGrantPrivilegesSql,
+  revokePrivilegesSql: starrocksRevokePrivilegesSql,
   label: mysqlUserLabel,
   detail: (user) => user.plugin,
-  privilegesForScope: () => MYSQL_COMMON_PRIVILEGES,
+  privilegesForScope: () => STARROCKS_TABLE_PRIVILEGES,
   defaultPrivilegesForScope: () => ["SELECT"],
 };
+
+const DATABASE_USER_ADMIN_PROVIDER_BY_TYPE = new Map<DatabaseType, DatabaseUserAdminProvider>([
+  ["mysql", mysqlUserAdminProvider],
+  ["goldendb", mysqlUserAdminProvider],
+  ["kingbase", kingbaseUserAdminProvider],
+  ["postgres", postgresUserAdminProvider],
+  ["gaussdb", postgresUserAdminProvider],
+  ["highgo", postgresUserAdminProvider],
+  ["kwdb", postgresUserAdminProvider],
+  ["opengauss", postgresUserAdminProvider],
+  ["questdb", postgresUserAdminProvider],
+  ["vastbase", postgresUserAdminProvider],
+  ["starrocks", starrocksUserAdminProvider],
+]);
+
+export function getDatabaseUserAdminProvider(dbType: DatabaseType | undefined): DatabaseUserAdminProvider | null {
+  return dbType ? (DATABASE_USER_ADMIN_PROVIDER_BY_TYPE.get(dbType) ?? null) : null;
+}
+
+export function supportsDatabaseUserAdmin(dbType: DatabaseType | undefined): boolean {
+  return !!dbType && supportsDatabaseFeature(dbType, "userAdmin") && DATABASE_USER_ADMIN_PROVIDER_BY_TYPE.has(dbType);
+}
+
+export function resolveDatabaseUserAdminProviderForConnection(connection: ConnectionConfig | undefined): DatabaseUserAdminProvider | null {
+  const dbType = effectiveDatabaseTypeForConnection(connection);
+  return supportsDatabaseUserAdmin(dbType) ? getDatabaseUserAdminProvider(dbType) : null;
+}
+
+export function connectionSupportsDatabaseUserAdmin(connection: ConnectionConfig | undefined): boolean {
+  return resolveDatabaseUserAdminProviderForConnection(connection) !== null;
+}
